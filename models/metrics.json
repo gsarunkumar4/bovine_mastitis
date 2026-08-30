@@ -1,0 +1,111 @@
+{
+  "7d": {
+    "auc": 0.999985386953472,
+    "average_precision": 0.9993678392409595,
+    "threshold": 0.985,
+    "sensitivity_recall": 0.9642857142857143,
+    "specificity": 1.0,
+    "precision": 1.0,
+    "f1": 0.9818181818181818,
+    "confusion_matrix": {
+      "tn": 2444,
+      "fp": 0,
+      "fn": 2,
+      "tp": 54
+    },
+    "baseline_logistic_auc": 0.998056464811784,
+    "forecast_horizon_days": 7,
+    "window_type": "calendar-time 3D/7D",
+    "validation_recall": 0.9183673469387755,
+    "validation_specificity": 1.0,
+    "validation_precision": 1.0,
+    "split": "cow-level stratified",
+    "data_type": "synthetic",
+    "signals_used": [
+      "milk_yield_l",
+      "milk_conductivity",
+      "milk_temp_c",
+      "scc_value",
+      "activity_score",
+      "rumination_min",
+      "environment_heat_index",
+      "hygiene_score",
+      "feed_score",
+      "milking_hygiene_score"
+    ],
+    "farm_information_used": false,
+    "prototype_fixed_baselines": {
+      "activity_score": 0.9,
+      "rumination_min": 520.0,
+      "environment_heat_index": 70.0,
+      "hygiene_score": 0.9,
+      "feed_score": 0.9,
+      "milking_hygiene_score": 0.95
+    }
+  },
+  "14d": {
+    "auc": 0.9556487796123474,
+    "average_precision": 0.9070335250878815,
+    "threshold": 0.985,
+    "sensitivity_recall": 0.8214285714285714,
+    "specificity": 1.0,
+    "precision": 1.0,
+    "f1": 0.9019607843137255,
+    "confusion_matrix": {
+      "tn": 2388,
+      "fp": 0,
+      "fn": 20,
+      "tp": 92
+    },
+    "baseline_logistic_auc": 0.9532072565206987,
+    "forecast_horizon_days": 14,
+    "window_type": "calendar-time 3D/7D",
+    "validation_recall": 0.8163265306122449,
+    "validation_specificity": 1.0,
+    "validation_precision": 1.0,
+    "split": "cow-level stratified",
+    "data_type": "synthetic",
+    "signals_used": [
+      "milk_yield_l",
+      "milk_conductivity",
+      "milk_temp_c",
+      "scc_value",
+      "activity_score",
+      "rumination_min",
+      "environment_heat_index",
+      "hygiene_score",
+      "feed_score",
+      "milking_hygiene_score"
+    ],
+    "farm_information_used": false,
+    "prototype_fixed_baselines": {
+      "activity_score": 0.9,
+      "rumination_min": 520.0,
+      "environment_heat_index": 70.0,
+      "hygiene_score": 0.9,
+      "feed_score": 0.9,
+      "milking_hygiene_score": 0.95
+    }
+  },
+  "signals_used": [
+    "milk_yield_l",
+    "milk_conductivity",
+    "milk_temp_c",
+    "scc_value",
+    "activity_score",
+    "rumination_min",
+    "environment_heat_index",
+    "hygiene_score",
+    "feed_score",
+    "milking_hygiene_score"
+  ],
+  "farm_information_used": false,
+  "prototype_fixed_baselines": {
+    "activity_score": 0.9,
+    "rumination_min": 520.0,
+    "environment_heat_index": 70.0,
+    "hygiene_score": 0.9,
+    "feed_score": 0.9,
+    "milking_hygiene_score": 0.95
+  }
+}
