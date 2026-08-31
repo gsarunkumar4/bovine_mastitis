@@ -1,18 +1,28 @@
 <!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Mastitis Risk Dashboard</title><script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<style>body{font-family:Arial;margin:0;background:#f5f6f8}header{background:#20252b;color:#fff;padding:18px}main{max-width:1150px;margin:auto;padding:18px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px}.card{background:#fff;padding:16px;border-radius:12px;box-shadow:0 2px 8px #0001}table{width:100%;border-collapse:collapse}th,td{padding:9px;border-bottom:1px solid #ddd;text-align:left}.driver{display:inline-block;padding:5px;margin:2px;border-radius:7px;background:#eee}.NoRisk{color:green}.LowRisk{color:#777}.ModerateRisk{color:#d97706}.HighRisk{color:red;font-weight:700}button{padding:9px 12px;border:0;border-radius:8px;margin-right:6px}@media(max-width:700px){main{padding:9px}table{font-size:12px}.wide{overflow-x:auto}}</style></head>
+<style>body{font-family:Arial;margin:0;background:#f5f6f8}header{background:#20252b;color:#fff;padding:18px}main{max-width:1150px;margin:auto;padding:18px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px}.card{background:#fff;padding:16px;border-radius:12px;box-shadow:0 2px 8px #0001}table{width:100%;border-collapse:collapse}th,td{padding:9px;border-bottom:1px solid #ddd;text-align:left}.driver{display:inline-block;padding:5px;margin:2px;border-radius:7px;background:#eee}.NoRisk{color:green}.LowRisk{color:#777}.ModerateRisk{color:#d97706}.HighRisk{color:red;font-weight:700}.alert{padding:12px;margin:8px 0;border-left:5px solid red;background:#fff4f4;border-radius:8px}.alert b{font-size:16px}button{padding:9px 12px;border:0;border-radius:8px;margin-right:6px}.chartGrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:20px}.chartGrid>div{min-height:280px}.chartGrid canvas{width:100%!important;height:240px!important}.chartGrid h4{margin:6px 0 10px}@media(max-width:700px){.chartGrid{grid-template-columns:1fr}main{padding:9px}table{font-size:12px}.wide{overflow-x:auto}}</style></head>
 <body><header><h2 id="title">Bovine Mastitis Risk Forecasting</h2><button onclick="toggleLang()">தமிழ் / English</button><button onclick="refresh()">Refresh</button></header><main>
-<div class="grid"><div class="card"><b id="t1">Total cows</b><h2 id="total">-</h2></div><div class="card"><b id="t2">High 7-day risk</b><h2 id="high">-</h2></div><div class="card"><b>7-day Model AUC</b><h2 id="auc">-</h2></div><div class="card"><b>Forecast</b><h2>7 + 14 days</h2></div></div><br>
+<div class="grid"><div class="card"><b id="t1">Total cows</b><h2 id="total">-</h2></div><div class="card"><b id="t2">High forecast risk</b><h2 id="high">-</h2></div><div class="card"><b>7-day Model AUC</b><h2 id="auc">-</h2></div><div class="card"><b>Forecast</b><h2>7 + 14 days</h2></div></div><br>
 <div class="card"><h3>Herd Risk</h3><div class="wide"><table><thead><tr><th>Cow</th><th>7-day</th><th>14-day</th><th>Days of data</th><th>Top drivers</th></tr></thead><tbody id="herd"></tbody></table></div></div>
-<br><div class="card"><h3 id="detailTitle">Selected Cow</h3><div id="detail">Select a cow.</div><canvas id="riskChart"></canvas><br><canvas id="sensorChart"></canvas></div>
+<br><div class="card"><h3 id="detailTitle">Selected Cow</h3><div id="detail">Select a cow.</div><canvas id="riskChart"></canvas></div>
+<br><div class="card"><h3>Sensor Trends</h3>
+<div class="chartGrid">
+  <div><h4>Milk Conductivity</h4><canvas id="conductivityChart"></canvas></div>
+  <div><h4>Milk Temperature</h4><canvas id="temperatureChart"></canvas></div>
+  <div><h4>Somatic Cell Count (SCC)</h4><canvas id="sccChart"></canvas></div>
+  <div><h4>Milk Yield</h4><canvas id="yieldChart"></canvas></div>
+</div></div>
 <br><div class="card"><h3>Alerts</h3><div id="alerts">Loading...</div></div></main>
 <script>
-const API="http://127.0.0.1:8000"; let riskChart=null,sensorChart=null,tamil=false;
+const API="http://127.0.0.1:8000"; let riskChart=null,conductivityChart=null,temperatureChart=null,sccChart=null,yieldChart=null,tamil=false;
 async function refresh(){
+ try{
+  await fetch(API+"/alerts/check",{method:"POST"});
+ }catch(e){ console.warn("Alert check failed",e); }
  const [h,m,a]=await Promise.all([fetch(API+"/herd/risk").then(r=>r.json()),fetch(API+"/metrics").then(r=>r.json()),fetch(API+"/alerts").then(r=>r.json())]);
- total.textContent=h.length;high.textContent=h.filter(x=>x.risk_tier_7d==="High Risk").length;auc.textContent=m["7d"]?.auc?.toFixed(3)??"-";
+ total.textContent=h.length;high.textContent=h.filter(x=>x.risk_tier_7d==="High Risk"||x.risk_tier_14d==="High Risk").length;auc.textContent=m["7d"]?.auc?.toFixed(3)??"-";
  herd.innerHTML=h.map(x=>`<tr onclick="showCow('${x.cow_id}')"><td>${x.cow_id}</td><td>${x.risk_percent_7d}% (${x.risk_tier_7d})</td><td>${x.risk_percent_14d}% (${x.risk_tier_14d})</td><td>${x.data_days}</td><td>${x.top_driver_features.map(d=>`<span class=driver>${d.feature}</span>`).join("")}</td></tr>`).join("");
- alerts.innerHTML=a.length?a.map(x=>`<p><b>${x.cow_id}</b> — ${(x.risk_score*100).toFixed(1)}% — ${x.message}</p>`).join(""):"No alerts.";
+ alerts.innerHTML=a.length?a.map(x=>`<div class="alert"><b>🚨 ${x.cow_id}</b><div>${(x.risk_score*100).toFixed(1)}% forecast risk</div><div>${x.message}</div></div>`).join(""):"No alerts.";
  if(h.length)showCow(h[0].cow_id)
 }
 async function showCow(c){
@@ -20,9 +30,17 @@ async function showCow(c){
  detail.innerHTML=`<h2>${r.cow_id}: ${r.risk_percent_7d}% 7-day — ${r.risk_tier_7d}</h2><p><b>14-day:</b> ${r.risk_percent_14d}% — ${r.risk_tier_14d}</p><p><b>Daily samples accumulated:</b> ${r.data_days}</p><p>Each day's prediction uses only information available for this cow up to that day.</p><p><b>Drivers:</b> ${r.top_driver_features.map(d=>d.feature).join(", ")}</p><p><b>Recommendations:</b> ${r.recommendations.join(" ")}</p>`;
  if(riskChart)riskChart.destroy();
  riskChart=new Chart(document.getElementById("riskChart"),{type:"line",data:{labels:rh.map(x=>x.date),datasets:[{label:"7-day risk %",data:rh.map(x=>x.risk_percent_7d)},{label:"14-day risk %",data:rh.map(x=>x.risk_percent_14d)}]},options:{responsive:true,scales:{y:{min:0,max:100}}}});
- if(sensorChart)sensorChart.destroy();
- sensorChart=new Chart(document.getElementById("sensorChart"),{type:"line",data:{labels:h.map(x=>x.timestamp),datasets:[{label:"Milk conductivity",data:h.map(x=>x.milk_conductivity)},{label:"Milk temperature °C",data:h.map(x=>x.milk_temp_c)},{label:"SCC",data:h.map(x=>x.scc_value)}]},options:{responsive:true}})
+ const labels=h.map(x=>x.timestamp);
+ const common={responsive:true,maintainAspectRatio:false,scales:{x:{ticks:{maxRotation:45,minRotation:45}},y:{beginAtZero:false}},plugins:{legend:{display:true}}};
+ if(conductivityChart)conductivityChart.destroy();
+ conductivityChart=new Chart(document.getElementById("conductivityChart"),{type:"line",data:{labels:h.map(x=>x.timestamp),datasets:[{label:"Milk conductivity",data:h.map(x=>x.milk_conductivity),tension:.25}]},options:{...common,scales:{x:common.scales.x,y:{title:{display:true,text:"Conductivity"}}}}});
+ if(temperatureChart)temperatureChart.destroy();
+ temperatureChart=new Chart(document.getElementById("temperatureChart"),{type:"line",data:{labels:h.map(x=>x.timestamp),datasets:[{label:"Milk temperature (°C)",data:h.map(x=>x.milk_temp_c),tension:.25}]},options:{...common,scales:{x:common.scales.x,y:{title:{display:true,text:"°C"}}}}});
+ if(sccChart)sccChart.destroy();
+ sccChart=new Chart(document.getElementById("sccChart"),{type:"line",data:{labels:h.map(x=>x.timestamp),datasets:[{label:"SCC",data:h.map(x=>x.scc_value),tension:.25}]},options:{...common,scales:{x:common.scales.x,y:{title:{display:true,text:"cells/mL"}}}}});
+ if(yieldChart)yieldChart.destroy();
+ yieldChart=new Chart(document.getElementById("yieldChart"),{type:"line",data:{labels:h.map(x=>x.timestamp),datasets:[{label:"Milk yield (L)",data:h.map(x=>x.milk_yield_l),tension:.25}]},options:{...common,scales:{x:common.scales.x,y:{title:{display:true,text:"Litres/day"}}}}});
 }
-function toggleLang(){tamil=!tamil;title.textContent=tamil?"மாட்டின் முலையழற்சி அபாய முன்னறிவிப்பு":"Bovine Mastitis Risk Forecasting";t1.textContent=tamil?"மொத்த மாடுகள்":"Total cows";t2.textContent=tamil?"7 நாள் அதிக அபாயம்":"High 7-day risk";detailTitle.textContent=tamil?"மாடு விவரம்":"Selected Cow";refresh()}
+function toggleLang(){tamil=!tamil;title.textContent=tamil?"மாட்டின் முலையழற்சி அபாய முன்னறிவிப்பு":"Bovine Mastitis Risk Forecasting";t1.textContent=tamil?"மொத்த மாடுகள்":"Total cows";t2.textContent=tamil?"7/14 நாள் அதிக அபாயம்":"High forecast risk";detailTitle.textContent=tamil?"மாடு விவரம்":"Selected Cow";refresh()}
 refresh();
 </script></body></html>

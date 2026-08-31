@@ -125,17 +125,47 @@ def risk_history(cow_id):
 
 
 def maybe_alert(res):
-    # Do not create the same high-risk alert repeatedly when the dashboard refreshes.
-    if res["risk_tier_7d"] == "High Risk":
-        c = connect()
-        day = res["date"][:10]
-        exists = c.execute("SELECT 1 FROM alerts WHERE cow_id=? AND substr(timestamp,1,10)=? AND message LIKE 'High 7-day%' LIMIT 1", (res["cow_id"], day)).fetchone()
-        if not exists:
-            c.execute("INSERT INTO alerts(cow_id,timestamp,risk_score,message) VALUES(?,?,?,?)",
-                      (res["cow_id"], datetime.now(timezone.utc).isoformat(), res["risk_score_7d"],
-                       "High 7-day mastitis risk. Re-check the animal and follow veterinary protocol."))
-            c.commit()
-        c.close()
+    """Create one alert per cow/day when either forecast horizon is high risk."""
+    if res["risk_tier_7d"] != "High Risk" and res["risk_tier_14d"] != "High Risk":
+        return False
+
+    high7 = res["risk_tier_7d"] == "High Risk"
+    high14 = res["risk_tier_14d"] == "High Risk"
+    day = res["date"][:10]
+    if high7 and high14:
+        message = (
+            f"High mastitis risk. 7-day: {res['risk_percent_7d']:.1f}%, "
+            f"14-day: {res['risk_percent_14d']:.1f}%. Re-check the cow and follow veterinary protocol."
+        )
+    elif high7:
+        message = (
+            f"High 7-day mastitis risk ({res['risk_percent_7d']:.1f}%). "
+            "Re-check the cow and follow veterinary protocol."
+        )
+    else:
+        message = (
+            f"High 14-day mastitis risk ({res['risk_percent_14d']:.1f}%). "
+            "Increase monitoring and follow veterinary protocol."
+        )
+
+    # Avoid duplicate alerts for the same cow and forecast day.
+    c = connect()
+    exists = c.execute(
+        "SELECT 1 FROM alerts WHERE cow_id=? AND substr(timestamp,1,10)=? AND message LIKE 'High%mastitis risk%' LIMIT 1",
+        (res["cow_id"], day),
+    ).fetchone()
+    if not exists:
+        score = max(res["risk_score_7d"], res["risk_score_14d"])
+        c.execute(
+            "INSERT INTO alerts(cow_id,timestamp,risk_score,message) VALUES(?,?,?,?)",
+            (res["cow_id"], datetime.now(timezone.utc).isoformat(), score, message),
+        )
+        c.commit()
+        created = True
+    else:
+        created = False
+    c.close()
+    return created
 
 
 @app.on_event("startup")
@@ -221,8 +251,15 @@ def alerts():
 
 @app.post("/alerts/check")
 def check_alerts():
-    h = [x for x in herd_risk() if x["risk_tier_7d"] == "High Risk"]
-    return {"high_risk_count": len(h), "high_risk_cows": h}
+    """Evaluate all cows and persist alerts for high 7-day or 14-day risk."""
+    h = herd_risk()
+    high = [x for x in h if x["risk_tier_7d"] == "High Risk" or x["risk_tier_14d"] == "High Risk"]
+    created = sum(1 for x in high if maybe_alert(x))
+    return {
+        "high_risk_count": len(high),
+        "high_risk_cows": high,
+        "new_alerts_created": created,
+    }
 
 
 @app.post("/feedback")
