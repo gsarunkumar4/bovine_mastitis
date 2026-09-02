@@ -1,9 +1,32 @@
-import numpy as np
 import pandas as pd
+import numpy as np
 
-# Keep the complete original ML signal set. For the current prototype,
-# farm-management values are fixed to healthy baseline values rather than
-# being collected from the farmer.
+
+# =========================================================
+# FIXED GOOD VALUES
+# =========================================================
+
+FIXED_GOOD_VALUES = {
+    "activity_score": 0.90,
+    "rumination_min": 520.0,
+
+    # Used only when DHT22 temperature/humidity
+    # are unavailable.
+    "environment_heat_index": 70.0,
+
+    "hygiene_score": 0.90,
+    "feed_score": 0.90,
+    "milking_hygiene_score": 0.95,
+}
+
+
+# =========================================================
+# EXISTING ML SIGNALS
+# =========================================================
+# IMPORTANT:
+# Keep these unchanged because the existing trained model
+# expects the existing 114 engineered features.
+
 SIGNALS = [
     "milk_yield_l",
     "milk_conductivity",
@@ -17,116 +40,480 @@ SIGNALS = [
     "milking_hygiene_score",
 ]
 
-# Prototype healthy/favourable fixed values for farm-management signals.
-# These stay constant for all incoming readings until real farm inputs are added.
-FIXED_GOOD_VALUES = {
-    "activity_score": 0.90,
-    "rumination_min": 520.0,
-    "environment_heat_index": 70.0,
-    "hygiene_score": 0.90,
-    "feed_score": 0.90,
-    "milking_hygiene_score": 0.95,
-}
 
-SCC_DEFAULT = 180_000.0
-
-
-def apply_prototype_defaults(df):
-    """Fill prototype-only fields while preserving the full ML feature set."""
-    df = df.copy()
-    for col, value in FIXED_GOOD_VALUES.items():
-        if col not in df.columns:
-            df[col] = value
-        else:
-            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(value)
-    return df
-
-
-def prepare_signals(df):
-    df = apply_prototype_defaults(df)
-    if df.empty:
-        return df
-    df["timestamp"] = pd.to_datetime(df["timestamp"])
-    df = df.sort_values(["cow_id", "timestamp"])
-    # SCC may be supplied periodically. Carry the latest known value forward.
-    # If a cow has never supplied SCC, use a conservative prototype baseline.
-    df["scc_value"] = df.groupby("cow_id")["scc_value"].ffill().fillna(SCC_DEFAULT)
-    return df
-
-
-def engineer(df):
-    df = prepare_signals(df)
-    if df.empty:
-        return df
-    pieces = []
-    for _, g0 in df.groupby("cow_id", sort=False):
-        g = g0.sort_values("timestamp").copy().reset_index(drop=True)
-        base = {col: g[col].to_numpy() for col in SIGNALS}
-        extra = {}
-        ts = g.set_index("timestamp")
-        for col in SIGNALS:
-            s = ts[col]
-            for w in (3, 7):
-                rolled = pd.concat([
-                    s.rolling(window=w, min_periods=1).mean().rename(f"{col}_mean_{w}d"),
-                    s.rolling(window=w, min_periods=1).min().rename(f"{col}_min_{w}d"),
-                    s.rolling(window=w, min_periods=1).max().rename(f"{col}_max_{w}d"),
-                    s.rolling(window=w, min_periods=2).std().rename(f"{col}_std_{w}d"),
-                ], axis=1).reset_index(drop=True)
-                for name in rolled.columns:
-                    extra[name] = rolled[name].to_numpy()
-                # Difference from the observation w rows earlier. The input
-                # workflow is one sample per day, so this corresponds to days.
-                extra[f"{col}_delta_{w}d"] = (g[col] - g[col].shift(w)).to_numpy()
-        extra_df = pd.DataFrame(extra, index=g.index)
-        g = pd.concat([g, extra_df], axis=1)
-        pieces.append(g)
-    out = pd.concat(pieces, ignore_index=True).replace([np.inf, -np.inf], np.nan)
-    # Keep numeric model inputs numeric and represent unavailable first-window
-    # deltas/std values as 0 without pandas downcasting warnings.
-    numeric_cols = out.select_dtypes(include=[np.number]).columns
-    out[numeric_cols] = out[numeric_cols].fillna(0.0)
-    return out
-
+# =========================================================
+# VALIDATE READING
+# =========================================================
 
 def validate_reading(r):
-    checks = {
-        "milk_yield_l": (0, 100),
-        "milk_conductivity": (0.01, 30),
-        "milk_temp_c": (30, 45),
-        "scc_value": (0, 20_000_000),
-    }
     errors = []
-    for name, (lo, hi) in checks.items():
-        v = getattr(r, name, None)
-        if v is not None and not lo <= v <= hi:
-            errors.append(f"{name} outside accepted range")
+
+    if not r.cow_id:
+        errors.append("cow_id is required")
+
+    if r.milk_yield_l is None:
+        errors.append("milk_yield_l is required")
+    elif r.milk_yield_l < 0:
+        errors.append("milk_yield_l must be >= 0")
+
+    if r.milk_conductivity is None:
+        errors.append("milk_conductivity is required")
+    elif r.milk_conductivity <= 0:
+        errors.append("milk_conductivity must be > 0")
+
+    if r.milk_temp_c is None:
+        errors.append("milk_temp_c is required")
+
+    if r.scc_value is not None and r.scc_value < 0:
+        errors.append("scc_value must be >= 0")
+
+    # ---------------------------------------------------------
+    # DHT22 VALIDATION
+    # ---------------------------------------------------------
+
+    if r.farm_temperature_c is not None:
+
+        if (
+            r.farm_temperature_c < -20
+            or r.farm_temperature_c > 60
+        ):
+            errors.append(
+                "farm_temperature_c is outside valid range"
+            )
+
+    if r.farm_humidity is not None:
+
+        if (
+            r.farm_humidity < 0
+            or r.farm_humidity > 100
+        ):
+            errors.append(
+                "farm_humidity must be between 0 and 100"
+            )
+
     return errors
 
 
+# =========================================================
+# CALCULATE ENVIRONMENT HEAT INDEX
+# =========================================================
+
+def calculate_heat_index(
+    temperature_c,
+    humidity
+):
+    """
+    Calculate Temperature-Humidity Index (THI)
+    from actual DHT22 temperature and humidity.
+
+    temperature_c:
+        Farm/environment temperature in Celsius.
+
+    humidity:
+        Relative humidity in percentage.
+    """
+
+    if (
+        temperature_c is None
+        or humidity is None
+    ):
+        return FIXED_GOOD_VALUES[
+            "environment_heat_index"
+        ]
+
+    try:
+
+        temperature_c = float(
+            temperature_c
+        )
+
+        humidity = float(
+            humidity
+        )
+
+        thi = (
+            (1.8 * temperature_c + 32)
+            -
+            (
+                (
+                    0.55
+                    -
+                    0.0055 * humidity
+                )
+                *
+                (
+                    1.8 * temperature_c
+                    -
+                    26.8
+                )
+            )
+        )
+
+        return float(thi)
+
+    except (
+        TypeError,
+        ValueError
+    ):
+
+        return FIXED_GOOD_VALUES[
+            "environment_heat_index"
+        ]
+
+
+# =========================================================
+# DAILY AGGREGATION
+# =========================================================
+
 def aggregate_daily(df):
-    d = apply_prototype_defaults(df)
-    d["timestamp"] = pd.to_datetime(d["timestamp"])
-    d["date"] = d["timestamp"].dt.floor("D")
-    d = d.sort_values(["cow_id", "timestamp"])
 
-    # For SCC, use the latest value available on that day; this also supports
-    # periodic SCC measurements rather than requiring SCC at every ingestion.
-    d["scc_value"] = d.groupby("cow_id")["scc_value"].ffill()
-    d["scc_value"] = d["scc_value"].fillna(SCC_DEFAULT)
+    if df.empty:
+        return df
 
-    g = d.groupby(["cow_id", "date"])
-    out = g.agg({
+    df = df.copy()
+
+    # ---------------------------------------------------------
+    # TIMESTAMP
+    # ---------------------------------------------------------
+
+    df["timestamp"] = pd.to_datetime(
+        df["timestamp"],
+        errors="coerce"
+    )
+
+    df["date"] = (
+        df["timestamp"]
+        .dt.strftime("%Y-%m-%d")
+    )
+
+    # ---------------------------------------------------------
+    # NUMERIC COLUMNS
+    # ---------------------------------------------------------
+
+    numeric_columns = [
+        "milk_yield_l",
+        "milk_conductivity",
+        "milk_temp_c",
+        "scc_value",
+        "activity_score",
+        "rumination_min",
+        "environment_heat_index",
+        "hygiene_score",
+        "feed_score",
+        "milking_hygiene_score",
+        "farm_temperature_c",
+        "farm_humidity",
+    ]
+
+    for column in numeric_columns:
+
+        if column in df.columns:
+
+            df[column] = pd.to_numeric(
+                df[column],
+                errors="coerce"
+            )
+
+    # =========================================================
+    # DHT22 → ENVIRONMENT HEAT INDEX
+    # =========================================================
+
+    if (
+        "farm_temperature_c" in df.columns
+        and "farm_humidity" in df.columns
+    ):
+
+        valid_environment = (
+            df["farm_temperature_c"].notna()
+            &
+            df["farm_humidity"].notna()
+        )
+
+        df.loc[
+            valid_environment,
+            "environment_heat_index"
+        ] = df.loc[
+            valid_environment
+        ].apply(
+            lambda row:
+                calculate_heat_index(
+                    row["farm_temperature_c"],
+                    row["farm_humidity"]
+                ),
+            axis=1
+        )
+
+    # =========================================================
+    # DAILY AGGREGATION
+    # =========================================================
+
+    aggregation = {
+
+        # Milk
         "milk_yield_l": "sum",
         "milk_conductivity": "mean",
         "milk_temp_c": "mean",
+
+        # SCC
         "scc_value": "last",
+
+        # Existing ML signals
         "activity_score": "mean",
         "rumination_min": "mean",
         "environment_heat_index": "mean",
+
         "hygiene_score": "mean",
         "feed_score": "mean",
         "milking_hygiene_score": "mean",
-    }).reset_index()
-    out["timestamp"] = out["date"].astype(str)
-    return out.drop(columns=["date"])
+
+        # Actual DHT22 values stored for display/history
+        "farm_temperature_c": "mean",
+        "farm_humidity": "mean",
+    }
+
+    available_aggregation = {
+        key: value
+        for key, value in aggregation.items()
+        if key in df.columns
+    }
+
+    result = (
+        df
+        .groupby(
+            "date",
+            as_index=False
+        )
+        .agg(
+            available_aggregation
+        )
+    )
+
+    # =========================================================
+    # DEFAULT EXISTING ML VALUES
+    # =========================================================
+
+    for column, value in FIXED_GOOD_VALUES.items():
+
+        if column not in result.columns:
+
+            result[column] = value
+
+        else:
+
+            result[column] = (
+                result[column]
+                .fillna(value)
+            )
+
+    # =========================================================
+    # SCC DEFAULT
+    # =========================================================
+
+    if "scc_value" not in result.columns:
+
+        result["scc_value"] = 180000.0
+
+    else:
+
+        result["scc_value"] = (
+            result["scc_value"]
+            .fillna(180000.0)
+        )
+
+    return result
+
+
+# =========================================================
+# FEATURE ENGINEERING
+# =========================================================
+
+def engineer(daily):
+
+    d = daily.copy()
+
+    # ---------------------------------------------------------
+    # SORT BY DATE
+    # ---------------------------------------------------------
+
+    if "date" in d.columns:
+
+        d = (
+            d
+            .sort_values("date")
+            .reset_index(drop=True)
+        )
+
+    # ---------------------------------------------------------
+    # ENSURE EXISTING ML SIGNALS EXIST
+    # ---------------------------------------------------------
+
+    for signal in SIGNALS:
+
+        if signal not in d.columns:
+
+            d[signal] = FIXED_GOOD_VALUES.get(
+                signal,
+                0.0
+            )
+
+        d[signal] = pd.to_numeric(
+            d[signal],
+            errors="coerce"
+        )
+
+        d[signal] = (
+            d[signal]
+            .fillna(
+                d[signal].median()
+            )
+        )
+
+        d[signal] = (
+            d[signal]
+            .fillna(0.0)
+        )
+
+    # =========================================================
+    # ROLLING FEATURES
+    # =========================================================
+
+    for signal in SIGNALS:
+
+        s = d[signal]
+
+        # -----------------------------------------------------
+        # 3-DAY FEATURES
+        # -----------------------------------------------------
+
+        d[
+            f"{signal}_mean_3d"
+        ] = (
+            s
+            .rolling(
+                3,
+                min_periods=1
+            )
+            .mean()
+        )
+
+        d[
+            f"{signal}_min_3d"
+        ] = (
+            s
+            .rolling(
+                3,
+                min_periods=1
+            )
+            .min()
+        )
+
+        d[
+            f"{signal}_max_3d"
+        ] = (
+            s
+            .rolling(
+                3,
+                min_periods=1
+            )
+            .max()
+        )
+
+        d[
+            f"{signal}_std_3d"
+        ] = (
+            s
+            .rolling(
+                3,
+                min_periods=1
+            )
+            .std()
+            .fillna(0)
+        )
+
+        d[
+            f"{signal}_delta_3d"
+        ] = (
+            s - s.shift(2)
+        ).fillna(0)
+
+        # -----------------------------------------------------
+        # 7-DAY FEATURES
+        # -----------------------------------------------------
+
+        d[
+            f"{signal}_mean_7d"
+        ] = (
+            s
+            .rolling(
+                7,
+                min_periods=1
+            )
+            .mean()
+        )
+
+        d[
+            f"{signal}_min_7d"
+        ] = (
+            s
+            .rolling(
+                7,
+                min_periods=1
+            )
+            .min()
+        )
+
+        d[
+            f"{signal}_max_7d"
+        ] = (
+            s
+            .rolling(
+                7,
+                min_periods=1
+            )
+            .max()
+        )
+
+        d[
+            f"{signal}_std_7d"
+        ] = (
+            s
+            .rolling(
+                7,
+                min_periods=1
+            )
+            .std()
+            .fillna(0)
+        )
+
+        d[
+            f"{signal}_delta_7d"
+        ] = (
+            s - s.shift(6)
+        ).fillna(0)
+
+    # =========================================================
+    # NUMERIC CLEANUP
+    # =========================================================
+
+    for column in d.columns:
+
+        if column not in [
+            "date",
+            "breed",
+            "calving_date",
+            "herd_id"
+        ]:
+
+            d[column] = pd.to_numeric(
+                d[column],
+                errors="coerce"
+            )
+
+    d = d.replace(
+        [np.inf, -np.inf],
+        np.nan
+    )
+
+    d = d.fillna(0)
+
+    return d
