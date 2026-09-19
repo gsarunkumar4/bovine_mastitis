@@ -1,0 +1,18 @@
+{
+  "xgboost": {
+    "n_estimators": 400,
+    "max_depth": 4,
+    "learning_rate": 0.04,
+    "subsample": 0.85,
+    "colsample_bytree": 0.85,
+    "min_child_weight": 3,
+    "reg_lambda": 1.5,
+    "early_stopping_rounds": 30
+  },
+  "target_recall": 0.8,
+  "target_recall_7d": 0.8,
+  "target_recall_14d": 0.6,
+  "split_seed": 2026,
+  "use_real_farm_features": false,
+  "incomplete_window_exclusion": "independent_per_horizon"
+}

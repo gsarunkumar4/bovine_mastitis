@@ -1,0 +1,60 @@
+{
+  "7d": {
+    "method": "sigmoid",
+    "brier_score": 0.004989193862227175,
+    "reliability_curve": {
+      "fraction_of_positives": [
+        0.0013700838168923275,
+        0.13793103448275862,
+        0.15384615384615385,
+        0.14285714285714285,
+        0.3333333333333333,
+        0.5,
+        0.5333333333333333,
+        0.7763975155279503
+      ],
+      "mean_predicted_value": [
+        0.0007385679614107778,
+        0.13592225198621685,
+        0.2562617526025409,
+        0.3678743112719724,
+        0.4568653134430311,
+        0.5469815923889209,
+        0.6401088226324358,
+        0.7224724266979403
+      ],
+      "n_bins": 10
+    },
+    "data_type": "synthetic",
+    "note": "Calibration fitted on synthetic validation data \u2014 does not represent clinical probability accuracy."
+  },
+  "14d": {
+    "method": "sigmoid",
+    "brier_score": 0.01651651637049225,
+    "reliability_curve": {
+      "fraction_of_positives": [
+        0.011916069424056645,
+        0.07534246575342465,
+        0.14035087719298245,
+        0.2222222222222222,
+        0.42857142857142855,
+        0.5,
+        0.7480314960629921,
+        0.918918918918919
+      ],
+      "mean_predicted_value": [
+        0.009507134795630692,
+        0.1385878072166153,
+        0.25059356452689724,
+        0.3383102613666182,
+        0.43242041996390573,
+        0.558976220841229,
+        0.6812483381446173,
+        0.7025523707645029
+      ],
+      "n_bins": 10
+    },
+    "data_type": "synthetic",
+    "note": "Calibration fitted on synthetic validation data \u2014 does not represent clinical probability accuracy."
+  }
+}

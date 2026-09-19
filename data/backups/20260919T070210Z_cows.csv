@@ -1,0 +1,4 @@
+cow_id,breed,age_years,parity,calving_date,vaccination_status,prior_mastitis_flag,herd_id
+c1,,,1,2026-01-01,1,0,demo_herd_01
+test_c,,,1,,1,0,demo_herd_01
+cow_audit_01,,,1,,1,0,demo_herd_01

@@ -1,0 +1,1063 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MastiSense — AI-IoT Bovine Mastitis Risk Forecasting Dashboard</title>
+  
+  <!-- PWA Capabilities (§1) -->
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#09261a">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+
+  <!-- Chart.js CDN (v4) -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <!-- Leaflet GIS Mapping CDN (§10) -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+
+  <!-- Modern Precision Agriculture Stylesheet -->
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <div class="app-shell">
+
+    <!-- Collapsible Sidebar Navigation -->
+    <aside class="app-sidebar" id="appSidebar">
+      <div class="sidebar-header">
+        <div class="brand-icon-box">M</div>
+        <div class="brand-info">
+          <div class="brand-name">MastiSense</div>
+          <div class="brand-tagline">AI-IoT Precision Health</div>
+        </div>
+      </div>
+
+      <nav class="sidebar-nav">
+        <a href="#overview" class="nav-link active">
+          <span class="nav-icon">📊</span>
+          <span data-i18n="navOverview">Executive Overview</span>
+        </a>
+        <a href="#cow-analysis" class="nav-link">
+          <span class="nav-icon">🔬</span>
+          <span data-i18n="navCowAnalysis">Cow Analysis & Forecast</span>
+        </a>
+        <a href="#telemetry" class="nav-link">
+          <span class="nav-icon">📈</span>
+          <span data-i18n="navTelemetry">Sensor Telemetry</span>
+        </a>
+        <a href="#explainability" class="nav-link">
+          <span class="nav-icon">🧠</span>
+          <span data-i18n="driversTitle">Model Risk Drivers</span>
+        </a>
+        <a href="#herd" class="nav-link">
+          <span class="nav-icon">🐄</span>
+          <span data-i18n="navHerd">Herd Surveillance</span>
+        </a>
+        <a href="#notifications" class="nav-link">
+          <span class="nav-icon">🔔</span>
+          <span data-i18n="navNotifications">Notifications Center</span>
+          <span id="notifNavBadge" class="nav-counter-badge" style="display:none;">0</span>
+        </a>
+        <a href="#farm-map" class="nav-link">
+          <span class="nav-icon">🗺️</span>
+          <span data-i18n="navFarmMap">Farm & Herd Map</span>
+        </a>
+        <a href="#alerts" class="nav-link">
+          <span class="nav-icon">🚨</span>
+          <span data-i18n="navAlerts">Alerts Center</span>
+        </a>
+        <a href="#governance" class="nav-link">
+          <span class="nav-icon">⚖️</span>
+          <span data-i18n="navGovernance">Model Governance</span>
+        </a>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="iot-status-chip">
+          <div class="pulse-dot"></div>
+          <span>ESP32 Gateway • Online</span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Content Shell -->
+    <div class="app-content">
+
+      <!-- Top Application Header -->
+      <header class="app-header">
+        <div class="header-left">
+          <button class="sidebar-toggle-btn" id="sidebarToggleBtn" aria-label="Toggle navigation">
+            ☰
+          </button>
+          
+          <div class="header-badges">
+            <span id="headerModelBadge" class="status-pill pill-synthetic">
+              <span id="headerModelText">Detecting model...</span>
+            </span>
+            <span class="status-pill pill-synthetic" data-i18n="syntheticBadge">
+              Synthetic Prototype (Decision Support Only)
+            </span>
+            <span id="connectionStatusPill" class="status-pill pill-synthetic">
+              <span id="connectionDot" class="pulse-dot"></span>
+              <span id="connectionStatusText" data-i18n="connectedStatus">Connecting...</span>
+            </span>
+          </div>
+        </div>
+
+        <div class="header-right">
+          <span style="font-size: 0.72rem; color: var(--text-muted);">
+            <span data-i18n="lastSyncLabel">Last sync:</span> <b id="lastSyncTime">--:--:--</b>
+          </span>
+
+          <!-- §11 — 6-Language Dropdown Selection -->
+          <div class="lang-select-wrapper">
+            <span class="lang-icon">🌐</span>
+            <select id="langSelect" class="lang-select-input" onchange="window.MastiSenseApp.setLanguage(this.value)">
+              <option value="en">English</option>
+              <option value="ta">தமிழ் (Tamil)</option>
+              <option value="hi">हिन्दी (Hindi)</option>
+              <option value="bn">বাংলা (Bengali)</option>
+              <option value="mr">मराठी (Marathi)</option>
+              <option value="ml">മലയാളം (Malayalam)</option>
+            </select>
+          </div>
+
+          <!-- Legacy button kept hidden for test/script compatibility -->
+          <button onclick="window.MastiSenseApp.toggleLanguage()" class="btn btn-secondary btn-sm" id="langToggleBtn" style="display:none;" title="Switch Language">
+            <span>🌐</span> <span id="langBtnText">தமிழ்</span>
+          </button>
+
+          <button onclick="window.MastiSenseApp.refreshData()" class="btn btn-primary btn-sm" id="refreshBtn" title="Synchronize Data">
+            <span id="refreshSpinnerIcon">↻</span> <span data-i18n="refreshBtn">Refresh</span>
+          </button>
+
+          <button onclick="window.MastiSenseApp.openApiModal()" class="btn btn-secondary btn-sm" title="Configure API Base URL">
+            <span>⚙</span> <span data-i18n="apiSettingsBtn">API</span>
+          </button>
+        </div>
+      </header>
+
+      <!-- Main Viewport Body -->
+      <main class="main-viewport">
+
+        <!-- ==================================================================
+             SECTION 1: HERO & HERD HEALTH OVERVIEW (#overview)
+             ================================================================== -->
+        <section id="overview" class="kpi-section">
+          <!-- Hero Status Banner -->
+          <div class="hero-status-strip">
+            <div class="hero-content">
+              <div class="hero-title-row">
+                <h1 class="hero-title" data-i18n="heroHeadline">AI-IoT Precision Mastitis Risk Forecasting</h1>
+                <span class="hero-tag">Active Surveillance</span>
+              </div>
+              <p class="hero-desc" data-i18n="heroDesc">
+                Continuous decision-support forecasting for dairy herds. Combining automated in-line sensors, animal history, and calibrated XGBoost machine learning to provide actionable 7-day early warnings and 14-day watch list trends before clinical symptoms manifest.
+              </p>
+            </div>
+
+            <div class="hero-indicators">
+              <div class="indicator-item">
+                <span data-i18n="heroIndSystem">System Status</span>: <span class="indicator-val" id="heroSystemStatus">Connecting...</span>
+              </div>
+              <div class="indicator-item">
+                <span data-i18n="heroIndModel">Model Serving</span>: <span class="indicator-val" id="heroModelStatus">Detecting...</span>
+              </div>
+              <div class="indicator-item">
+                <span data-i18n="heroIndGateway">ESP32 Gateway</span>: <span class="indicator-val">Connected</span>
+              </div>
+              <div class="indicator-item">
+                <span data-i18n="heroIndSource">Data Source</span>: <span class="indicator-val" id="heroIndSource">Synthetic</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 4 Herd KPI Cards -->
+          <div class="kpi-grid">
+            <!-- Total Monitored Cows -->
+            <div class="kpi-card kpi-total">
+              <div class="kpi-card-info">
+                <div class="kpi-label" data-i18n="kpiTotalCows">Total Monitored Cows</div>
+                <div class="kpi-value" id="kpiTotalVal">-</div>
+                <div class="kpi-subtext" data-i18n="kpiTotalSub">Registered herd cohort</div>
+              </div>
+              <div class="kpi-icon-badge">🐄</div>
+            </div>
+
+            <!-- High Risk (7d / 14d) -->
+            <div class="kpi-card kpi-high">
+              <div class="kpi-card-info">
+                <div class="kpi-label" data-i18n="kpiHighRisk">High Risk (7d / 14d)</div>
+                <div class="kpi-value" id="kpiHighVal">-</div>
+                <div class="kpi-subtext" id="kpiHighSub" data-i18n="kpiHighRiskSub">Immediate attention recommended</div>
+              </div>
+              <div class="kpi-icon-badge">🚨</div>
+            </div>
+
+            <!-- Moderate Risk (Watch List) -->
+            <div class="kpi-card kpi-mod">
+              <div class="kpi-card-info">
+                <div class="kpi-label" data-i18n="kpiModerateRisk">Moderate Risk (Watch List)</div>
+                <div class="kpi-value" id="kpiModVal">-</div>
+                <div class="kpi-subtext" id="kpiModSub" data-i18n="kpiModerateRiskSub">Elevated physiological drift</div>
+              </div>
+              <div class="kpi-icon-badge">⚠️</div>
+            </div>
+
+            <!-- Healthy / Low Risk -->
+            <div class="kpi-card kpi-healthy">
+              <div class="kpi-card-info">
+                <div class="kpi-label" data-i18n="kpiHealthyCows">Healthy / Low Risk</div>
+                <div class="kpi-value" id="kpiHealthyVal">-</div>
+                <div class="kpi-subtext" data-i18n="kpiHealthySub">Within baseline parameters</div>
+              </div>
+              <div class="kpi-icon-badge">🛡️</div>
+            </div>
+          </div>
+
+          <!-- Herd Health Distribution Bar -->
+          <div class="herd-distribution-bar">
+            <div class="dist-header">
+              <span data-i18n="herdDistTitle">Herd Health Distribution</span>
+              <div class="dist-legend">
+                <div class="dist-legend-item">
+                  <div class="dist-dot" style="background-color: var(--risk-none-solid);"></div>
+                  <span id="distHealthyLabel">Healthy / Low</span>
+                </div>
+                <div class="dist-legend-item">
+                  <div class="dist-dot" style="background-color: var(--risk-mod-solid);"></div>
+                  <span id="distModLabel">Moderate Risk</span>
+                </div>
+                <div class="dist-legend-item">
+                  <div class="dist-dot" style="background-color: var(--risk-high-solid);"></div>
+                  <span id="distHighLabel">High Risk</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="dist-bar-track">
+              <div class="dist-seg-healthy" id="distSegHealthy" style="width: 100%;"></div>
+              <div class="dist-seg-mod" id="distSegMod" style="width: 0%;"></div>
+              <div class="dist-seg-high" id="distSegHigh" style="width: 0%;"></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ==================================================================
+             SECTION 2: COW RISK ANALYSIS & DUAL FORECAST (#cow-analysis)
+             ================================================================== -->
+        <section id="cow-analysis" class="panel-card">
+          <div class="panel-card-header">
+            <div class="panel-title-group">
+              <h2 class="panel-title">
+                <span>🔬</span> <span data-i18n="cowAnalysisTitle">Selected Cow Analysis & Dual-Horizon Forecast</span>
+              </h2>
+              <div class="panel-subtitle" data-i18n="cowAnalysisSubtitle">
+                Individual cow risk trajectory, longitudinal multi-sensor signals, and explainability
+              </div>
+            </div>
+
+            <div class="cow-selector-box">
+              <label for="cowSelectDropdown" style="font-size: 0.78rem; font-weight: 600; color: var(--text-secondary);" data-i18n="selectCowLabel">
+                Select Cow:
+              </label>
+              <select id="cowSelectDropdown" class="cow-dropdown" onchange="window.MastiSenseApp.selectCow(this.value, true)">
+                <option value="">Loading cows...</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="dashboard-grid-hero">
+            <!-- Left Column: Cow Profile Metadata -->
+            <div class="cow-profile-panel">
+              <div class="profile-avatar-row">
+                <div class="cow-badge-avatar" id="profAvatarCowId">C</div>
+                <div class="cow-id-block">
+                  <div class="cow-id-text" id="profCowIdText">-</div>
+                  <div class="cow-breed-text" id="profBreedText">-</div>
+                </div>
+              </div>
+
+              <div class="profile-details-list">
+                <div class="profile-detail-row">
+                  <span class="detail-lbl" data-i18n="ageLabel">Age</span>
+                  <span class="detail-val" id="profAgeVal">-</span>
+                </div>
+                <div class="profile-detail-row">
+                  <span class="detail-lbl" data-i18n="parityLabel">Parity (Lactation #)</span>
+                  <span class="detail-val" id="profParityVal">-</span>
+                </div>
+                <div class="profile-detail-row">
+                  <span class="detail-lbl">Calving / DIM</span>
+                  <span class="detail-val" id="profCalvingVal">-</span>
+                </div>
+                <div class="profile-detail-row">
+                  <span class="detail-lbl" data-i18n="vaccinationLabel">Vaccination Status</span>
+                  <span class="detail-val" id="profVaccineVal">-</span>
+                </div>
+                <div class="profile-detail-row">
+                  <span class="detail-lbl" data-i18n="priorMastitisLabel">Prior Mastitis History</span>
+                  <span class="detail-val" id="profPriorMastitisVal">-</span>
+                </div>
+                <div class="profile-detail-row">
+                  <span class="detail-lbl" data-i18n="dataDaysLabel">Accumulated History</span>
+                  <span class="detail-val" id="profHistoryDaysVal">-</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Right Column: Dual-Horizon Forecast Cards (7-Day & 14-Day) -->
+            <div class="forecast-dual-container">
+              <!-- 7-Day Forecast (Primary Warning Alarm) -->
+              <div class="forecast-card forecast-card-7d">
+                <div class="forecast-card-header">
+                  <div class="forecast-horizon-title">
+                    <span>⏱️</span> <span data-i18n="forecast7dTitle">7-Day Mastitis Risk Forecast</span>
+                  </div>
+                  <span class="horizon-role-badge badge-primary-alarm" data-i18n="forecast7dRole">
+                    Primary Clinical Alarm
+                  </span>
+                </div>
+
+                <div class="gauge-and-meta-row">
+                  <div class="gauge-wrapper">
+                    <svg class="gauge-svg" viewBox="0 0 100 100">
+                      <circle class="gauge-bg" cx="50" cy="50" r="42"></circle>
+                      <circle class="gauge-progress" id="gaugeProg7d" cx="50" cy="50" r="42" style="stroke-dasharray: 263.89; stroke-dashoffset: 263.89;"></circle>
+                    </svg>
+                    <div class="gauge-center-text">
+                      <span class="gauge-percent" id="gaugeText7d">--</span>
+                      <span class="gauge-unit">%</span>
+                    </div>
+                  </div>
+
+                  <div class="risk-meta-block">
+                    <div id="riskTierBadge7d" class="risk-tier-badge tier-NoRisk">--</div>
+                    <div class="risk-desc-text" data-i18n="forecast7dDesc">
+                      Authoritative decision-support trigger (1 to 7 calendar days). Designed for immediate physical udder inspection, CMT testing, and hygiene review.
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Warnings (Limited History / Stale SCC) -->
+                <div id="warningCallout7d" style="display: none;"></div>
+              </div>
+
+              <!-- 14-Day Forecast (Exploratory Watch Signal) -->
+              <div class="forecast-card forecast-card-14d">
+                <div class="forecast-card-header">
+                  <div class="forecast-horizon-title">
+                    <span>📅</span> <span data-i18n="forecast14dTitle">14-Day Mastitis Risk Forecast</span>
+                  </div>
+                  <span class="horizon-role-badge badge-exploratory" data-i18n="forecast14dRole">
+                    Exploratory Watch Signal
+                  </span>
+                </div>
+
+                <div class="gauge-and-meta-row">
+                  <div class="gauge-wrapper">
+                    <svg class="gauge-svg" viewBox="0 0 100 100">
+                      <circle class="gauge-bg" cx="50" cy="50" r="42"></circle>
+                      <circle class="gauge-progress" id="gaugeProg14d" cx="50" cy="50" r="42" style="stroke-dasharray: 263.89; stroke-dashoffset: 263.89;"></circle>
+                    </svg>
+                    <div class="gauge-center-text">
+                      <span class="gauge-percent" id="gaugeText14d">--</span>
+                      <span class="gauge-unit">%</span>
+                    </div>
+                  </div>
+
+                  <div class="risk-meta-block">
+                    <div id="riskTierBadge14d" class="risk-tier-badge tier-NoRisk">--</div>
+                    <div class="risk-desc-text" data-i18n="forecast14dDesc">
+                      Longer-term surveillance indicator (1 to 14 days). Flags subtle multi-sensor drift for visual monitoring during milking.
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Warnings -->
+                <div id="warningCallout14d" style="display: none;"></div>
+              </div>
+
+              <!-- §3 — Dedicated Subclinical SCC Risk Indicator (Rule-Based, NOT ML) -->
+              <div class="subclinical-scc-card" id="subclinicalSccCard">
+                <div class="subclinical-card-header">
+                  <div class="subclinical-title-wrap">
+                    <span class="subclinical-icon">🧪</span>
+                    <div>
+                      <div class="subclinical-title" data-i18n="sccIndicatorTitle">Subclinical SCC Clinical Indicator</div>
+                      <div class="subclinical-subtitle" data-i18n="sccIndicatorSubtitle">Rule-Based Deterministic Marker • Separate from ML Forecasts</div>
+                    </div>
+                  </div>
+                  <span id="subclinicalTierBadge" class="subclinical-tier-pill scc-tier-normal">Normal</span>
+                </div>
+                <div class="subclinical-metrics-row">
+                  <div class="subclinical-metric-item">
+                    <span class="subclinical-lbl" data-i18n="latestSccValLabel">Latest Recorded SCC</span>
+                    <span id="subclinicalSccVal" class="subclinical-val">-- cells/mL</span>
+                  </div>
+                  <div class="subclinical-metric-item">
+                    <span class="subclinical-lbl" data-i18n="thresholdGuideLabel">Clinical Thresholds</span>
+                    <span class="subclinical-guide">≥ 200,000 (Elevated) • ≥ 400,000 (High / Clinical)</span>
+                  </div>
+                </div>
+                <div class="subclinical-desc-box" id="subclinicalNoteText" data-i18n="sccIndicatorDesc">
+                  Rule-based veterinary screening cutoff. Evaluates persistent subclinical inflammation independently from 7d/14d multi-sensor XGBoost projections.
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ==================================================================
+             SECTION 3: SENSOR TELEMETRY & TREND CHARTS (#telemetry)
+             ================================================================== -->
+        <section id="telemetry" class="panel-card">
+          <div class="panel-card-header">
+            <div class="panel-title-group">
+              <h2 class="panel-title">
+                <span>📈</span> <span data-i18n="trendsTitle">Longitudinal Sensor & Risk Trajectories</span>
+              </h2>
+              <div class="panel-subtitle" data-i18n="latestTelemetrySubtitle">
+                Physical and environmental sensor readings captured during the most recent observation
+              </div>
+            </div>
+
+            <!-- View Switcher Tabs -->
+            <div class="chart-tabs-group">
+              <button class="chart-tab-btn active" onclick="window.MastiSenseApp.switchChartTab('grid')" id="tabBtnGrid" data-i18n="tabGrid">
+                All Sensors (Grid)
+              </button>
+              <button class="chart-tab-btn" onclick="window.MastiSenseApp.switchChartTab('risk')" id="tabBtnRisk" data-i18n="tabRisk" style="display:none;">
+                Risk History
+              </button>
+              <button class="chart-tab-btn" onclick="window.MastiSenseApp.switchChartTab('cond')" id="tabBtnCond" data-i18n="tabCond">
+                Conductivity
+              </button>
+              <button class="chart-tab-btn" onclick="window.MastiSenseApp.switchChartTab('temp')" id="tabBtnTemp" data-i18n="tabTemp">
+                Temperature
+              </button>
+              <button class="chart-tab-btn" onclick="window.MastiSenseApp.switchChartTab('yield')" id="tabBtnYield" data-i18n="tabYield">
+                Yield
+              </button>
+              <button class="chart-tab-btn" onclick="window.MastiSenseApp.switchChartTab('scc')" id="tabBtnScc" data-i18n="tabScc">
+                SCC
+              </button>
+            </div>
+          </div>
+
+          <!-- Latest Recorded Telemetry Cards -->
+          <div class="telemetry-cards-grid">
+            <!-- Milk Electrical Conductivity -->
+            <div class="sensor-card">
+              <div class="sensor-card-top">
+                <span class="sensor-card-title" data-i18n="sensorCondTitle">Milk Conductivity</span>
+                <span class="sensor-card-icon">⚡</span>
+              </div>
+              <div class="sensor-card-value-row">
+                <span class="sensor-val" id="sensorCondVal">--</span>
+                <span class="sensor-unit">mS/cm</span>
+              </div>
+              <div class="sensor-card-reference">
+                <span class="ref-status-dot" id="condRefDot"></span>
+                <span data-i18n="sensorCondRef">Normal baseline: 4.0 - 5.5 mS/cm</span>
+              </div>
+            </div>
+
+            <!-- Milk Temperature -->
+            <div class="sensor-card">
+              <div class="sensor-card-top">
+                <span class="sensor-card-title" data-i18n="sensorTempTitle">Milk Temperature</span>
+                <span class="sensor-card-icon">🌡️</span>
+              </div>
+              <div class="sensor-card-value-row">
+                <span class="sensor-val" id="sensorTempVal">--</span>
+                <span class="sensor-unit">°C</span>
+              </div>
+              <div class="sensor-card-reference">
+                <span class="ref-status-dot" id="tempRefDot"></span>
+                <span data-i18n="sensorTempRef">Fever threshold: > 39.2 °C</span>
+              </div>
+            </div>
+
+            <!-- Daily Milk Yield -->
+            <div class="sensor-card">
+              <div class="sensor-card-top">
+                <span class="sensor-card-title" data-i18n="sensorYieldTitle">Milk Yield</span>
+                <span class="sensor-card-icon">🥛</span>
+              </div>
+              <div class="sensor-card-value-row">
+                <span class="sensor-val" id="sensorYieldVal">--</span>
+                <span class="sensor-unit">L / day</span>
+              </div>
+              <div class="sensor-card-reference">
+                <span data-i18n="sensorYieldRef">Sharp decline flags health stress</span>
+              </div>
+            </div>
+
+            <!-- Somatic Cell Count (SCC) -->
+            <div class="sensor-card">
+              <div class="sensor-card-top">
+                <span class="sensor-card-title" data-i18n="sensorSccTitle">Somatic Cell Count</span>
+                <span class="sensor-card-icon">🧪</span>
+              </div>
+              <div class="sensor-card-value-row">
+                <span class="sensor-val" id="sensorSccVal">--</span>
+                <span class="sensor-unit">cells/mL</span>
+              </div>
+              <div class="sensor-card-reference">
+                <span class="ref-status-dot" id="sccRefDot"></span>
+                <span data-i18n="sensorSccRef">Subclinical threshold: 200k</span>
+              </div>
+            </div>
+
+            <!-- Current Heat Index (sensor-derived) — Required Fix #2 -->
+            <div class="sensor-card">
+              <div class="sensor-card-top">
+                <span class="sensor-card-title" data-i18n="sensorHiTitle">Current Heat Index (sensor-derived)</span>
+                <span class="sensor-card-icon">☀️</span>
+              </div>
+              <div class="sensor-card-value-row">
+                <span class="sensor-val" id="sensorHeatIndexVal">--</span>
+                <span class="sensor-unit">HI</span>
+              </div>
+              <div class="sensor-card-reference">
+                <span class="ref-status-dot" id="heatIndexRefDot"></span>
+                <span data-i18n="sensorHiRef">Sensor formula: T + 0.36×H − 10.0 • ML feature</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Charts Container Grid -->
+          <div id="chartsGridContainer" class="charts-grid-container">
+            <!-- Calibrated Risk History Chart (hidden if no active model) -->
+            <div class="chart-card" id="cardChartRisk" style="display:none; grid-column: 1 / -1;">
+              <div class="chart-card-header">
+                <span class="chart-card-title" data-i18n="chartRiskTitle">7-Day & 14-Day Calibrated Risk History</span>
+              </div>
+              <div class="chart-canvas-container">
+                <canvas id="chartCanvasRisk"></canvas>
+              </div>
+            </div>
+
+            <!-- Conductivity Chart -->
+            <div class="chart-card" id="cardChartCond">
+              <div class="chart-card-header">
+                <span class="chart-card-title" data-i18n="chartCondTitle">Milk Electrical Conductivity Trend (mS/cm)</span>
+              </div>
+              <div class="chart-canvas-container">
+                <canvas id="chartCanvasCond"></canvas>
+              </div>
+            </div>
+
+            <!-- Temperature Chart -->
+            <div class="chart-card" id="cardChartTemp">
+              <div class="chart-card-header">
+                <span class="chart-card-title" data-i18n="chartTempTitle">In-Line Milk Temperature Trend (°C)</span>
+              </div>
+              <div class="chart-canvas-container">
+                <canvas id="chartCanvasTemp"></canvas>
+              </div>
+            </div>
+
+            <!-- Yield Chart -->
+            <div class="chart-card" id="cardChartYield">
+              <div class="chart-card-header">
+                <span class="chart-card-title" data-i18n="chartYieldTitle">Daily Milk Yield Trajectory (L)</span>
+              </div>
+              <div class="chart-canvas-container">
+                <canvas id="chartCanvasYield"></canvas>
+              </div>
+            </div>
+
+            <!-- Somatic Cell Count Chart -->
+            <div class="chart-card" id="cardChartScc">
+              <div class="chart-card-header">
+                <span class="chart-card-title" data-i18n="chartSccTitle">Somatic Cell Count History (cells/mL)</span>
+              </div>
+              <div class="chart-canvas-container">
+                <canvas id="chartCanvasScc"></canvas>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ==================================================================
+             SECTION 4: MODEL EXPLAINABILITY & RECOMMENDATIONS (#explainability)
+             ================================================================== -->
+        <section id="explainability" class="panel-card">
+          <div class="panel-card-header">
+            <div class="panel-title-group">
+              <h2 class="panel-title">
+                <span>🧠</span> <span data-i18n="driversTitle">Top Risk Driver Features (SHAP Explainability)</span>
+              </h2>
+              <div class="panel-subtitle" data-i18n="driversSubtitle">
+                Multi-sensor features contributing most to this cow's prediction
+              </div>
+            </div>
+          </div>
+
+          <div class="explainability-grid">
+            <!-- Left: Top SHAP Drivers -->
+            <div style="display:flex; flex-direction:column; gap:12px;">
+              <div style="font-size:0.75rem; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.04em;">
+                Feature Contribution To 7-Day Risk
+              </div>
+              <div class="drivers-list" id="topDriversList">
+                <div class="state-container" style="padding:16px;">
+                  <span class="state-desc" data-i18n="noDrivers">No significant risk drivers identified.</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Right: Actionable Recommendations -->
+            <div style="display:flex; flex-direction:column; gap:12px;">
+              <div style="font-size:0.75rem; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.04em;" data-i18n="recsTitle">
+                Actionable Herd Recommendations
+              </div>
+              <div class="recommendations-list" id="recommendationsList">
+                <div class="rec-item">
+                  <span class="rec-icon">✓</span>
+                  <span data-i18n="noRecs">All monitored parameters are within acceptable baseline bounds.</span>
+                </div>
+              </div>
+
+              <!-- Medical Disclaimer Banner -->
+              <div style="margin-top:auto; padding:10px 14px; background-color:var(--bg-subtle); border-radius:var(--radius-sm); border:1px solid var(--border-subtle); font-size:0.72rem; color:var(--text-muted); line-height:1.4;">
+                <b>Notice:</b> <span data-i18n="disclaimerText">MastiSense is an AI-IoT decision-support tool, not a diagnostic medical device. Never replace physical veterinary examinations with automated predictions.</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ==================================================================
+             SECTION 5: HERD SURVEILLANCE MATRIX (#herd)
+             ================================================================== -->
+        <section id="herd" class="panel-card">
+          <div class="panel-card-header">
+            <div class="panel-title-group">
+              <h2 class="panel-title">
+                <span>🐄</span> <span data-i18n="herdTableTitle">Herd Surveillance & Monitoring Matrix</span>
+              </h2>
+              <div class="panel-subtitle" data-i18n="herdTableSubtitle">
+                Complete individual cow health tracking and forecast early warning table
+              </div>
+            </div>
+
+            <div class="search-field-box">
+              <span>🔍</span>
+              <input type="text" id="cowSearchInput" class="search-field-input" placeholder="Search by Cow ID or Breed..." data-i18n-placeholder="searchPlaceholder">
+            </div>
+          </div>
+
+          <div class="data-table-wrapper">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th data-i18n="colCowId">Cow ID</th>
+                  <th data-i18n="colBreedParity">Breed & Parity</th>
+                  <th data-i18n="col7DayRisk">7-Day Risk Forecast</th>
+                  <th data-i18n="col14DayRisk">14-Day Risk Forecast</th>
+                  <th data-i18n="colHistory">History</th>
+                  <th data-i18n="colDrivers">Key Influencing Signals</th>
+                  <th data-i18n="colActions">Action</th>
+                </tr>
+              </thead>
+              <tbody id="herdTableBody">
+                <tr>
+                  <td colspan="7" class="state-container">
+                    <span class="state-desc" data-i18n="noCowsFound">Loading herd records...</span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- ==================================================================
+             SECTION 6A: NOTIFICATIONS CENTER (#notifications — §8)
+             ================================================================== -->
+        <section id="notifications" class="panel-card">
+          <div class="panel-card-header">
+            <div class="panel-title-group">
+              <h2 class="panel-title">
+                <span>🔔</span> <span data-i18n="notifCenterTitle">Integrated Notifications Center</span>
+              </h2>
+              <div class="panel-subtitle" data-i18n="notifCenterSubtitle">
+                Consolidated feed of acute risk subjects, climate advisories, veterinary recommendations, and channel dispatch logs
+              </div>
+            </div>
+
+            <!-- Notifications Center View Tabs -->
+            <div class="chart-tabs-group">
+              <button class="chart-tab-btn active" onclick="window.MastiSenseApp.switchNotifTab('risk')" id="notifTabBtnRisk" data-i18n="notifTabRisk">
+                Acute Risk Watch
+              </button>
+              <button class="chart-tab-btn" onclick="window.MastiSenseApp.switchNotifTab('climate')" id="notifTabBtnClimate" data-i18n="notifTabClimate">
+                Climate & THI Advisories
+              </button>
+              <button class="chart-tab-btn" onclick="window.MastiSenseApp.switchNotifTab('recs')" id="notifTabBtnRecs" data-i18n="notifTabRecs">
+                Recommendations Digest
+              </button>
+              <button class="chart-tab-btn" onclick="window.MastiSenseApp.switchNotifTab('log')" id="notifTabBtnLog" data-i18n="notifTabLog">
+                Notification Log
+              </button>
+            </div>
+          </div>
+
+          <!-- Tab 1: Acute Risk Watch (Moderate + High Cows) -->
+          <div id="notifContentRisk" class="notif-tab-content">
+            <div class="notif-cards-grid" id="acuteRiskList">
+              <div class="state-container">
+                <span class="state-desc" data-i18n="loadingRiskItems">Loading acute risk items...</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Tab 2: Climate & THI Weather Advisories (§9b) -->
+          <div id="notifContentClimate" class="notif-tab-content" style="display:none;">
+            <!-- THI Forecast Summary Card -->
+            <div class="climate-forecast-hero" id="climateHeroCard">
+              <div class="climate-hero-header">
+                <div class="climate-title-block">
+                  <span class="climate-icon">🌤️</span>
+                  <div>
+                    <h3 class="climate-title" data-i18n="thiAdvisoryTitle">Heat Stress Forecast (THI — standard livestock heat-stress index)</h3>
+                    <span class="climate-subtitle" data-i18n="thiAdvisorySubtitle">7-Day Forward Regional Weather Projection (Open-Meteo Integration)</span>
+                  </div>
+                </div>
+                <span id="thiStressBadge" class="thi-badge badge-normal">Evaluating Forecast...</span>
+              </div>
+
+              <div class="climate-stats-row">
+                <div class="climate-stat-box">
+                  <span class="stat-lbl" data-i18n="peakThiLabel">Peak Forecast THI</span>
+                  <span class="stat-val" id="peakThiVal">--</span>
+                </div>
+                <div class="climate-stat-box">
+                  <span class="stat-lbl" data-i18n="stressHoursLabel">Stress Hours (THI ≥ 72)</span>
+                  <span class="stat-val" id="stressHoursVal">-- hrs</span>
+                </div>
+                <div class="climate-stat-box">
+                  <span class="stat-lbl" data-i18n="forecastPeriodLabel">Forecast Window</span>
+                  <span class="stat-val" id="forecastPeriodVal">7 Days</span>
+                </div>
+              </div>
+
+              <div class="climate-advisory-text" id="climateAdvisorySummary">
+                Loading regional meteorological forecast...
+              </div>
+
+              <!-- Required Fix #2: Explicit Reconciliation Note -->
+              <div class="heat-index-reconciliation-banner">
+                <div class="recon-title">📌 <span data-i18n="reconTitle">Heat Index Reconciliation Note</span></div>
+                <div class="recon-body" data-i18n="reconBody">
+                  This forward-looking <b>Heat Stress Forecast</b> uses regional meteorological forecasts to compute the dairy-science standard livestock <b>THI</b> (<code>THI = T − (0.55 − 0.0055×RH)(T − 14.5)</code>). It is distinct from the per-cow sensor-derived <b>Current Heat Index</b> (<code>HI = T + 0.36×RH − 10.0</code>) displayed in the telemetry section. The sensor HI feeds real-time stall micro-climate into the ML model, while the forecast THI guides forward-looking environmental management (shading, ventilation, water provisions). Both are legitimate measures that serve distinct and complementary operational roles.
+                </div>
+              </div>
+            </div>
+
+            <!-- Weather Advisories Feed -->
+            <div class="advisories-feed" id="weatherAdvisoriesList" style="margin-top:16px;"></div>
+          </div>
+
+          <!-- Tab 3: Recommendations Digest -->
+          <div id="notifContentRecs" class="notif-tab-content" style="display:none;">
+            <div class="recs-digest-container" id="recsDigestList">
+              <div class="state-container">
+                <span class="state-desc" data-i18n="loadingDigest">Loading recommendations digest...</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Tab 4: Notification Delivery Log (§5) -->
+          <div id="notifContentLog" class="notif-tab-content" style="display:none;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+              <span style="font-size:0.8rem; color:var(--text-muted);" data-i18n="notifLogSubtitle">Audit history of all dispatched webhook and console early warning alerts</span>
+              <button onclick="window.MastiSenseApp.sendTestNotification()" class="btn btn-secondary btn-sm" id="btnTestNotif">
+                <span>🔔</span> <span data-i18n="testNotifBtn">Send Test Webhook</span>
+              </button>
+            </div>
+            <div class="data-table-wrapper">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Log ID</th>
+                    <th>Alert ID</th>
+                    <th>Channel</th>
+                    <th>Status</th>
+                    <th>Dispatched At</th>
+                  </tr>
+                </thead>
+                <tbody id="notifLogTableBody">
+                  <tr>
+                    <td colspan="5" class="state-container"><span class="state-desc">Loading delivery logs...</span></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- ==================================================================
+             SECTION 6B: FARM & HERD MAP VIEW (#farm-map — §10)
+             ================================================================== -->
+        <section id="farm-map" class="panel-card">
+          <div class="panel-card-header">
+            <div class="panel-title-group">
+              <h2 class="panel-title">
+                <span>🗺️</span> <span data-i18n="farmMapTitle">Farm & Herd Map View</span>
+              </h2>
+              <div class="panel-subtitle" data-i18n="farmMapSubtitle">
+                Geographic tracking of pastured cows, risk distribution, and nearby veterinary services (OSM Overpass)
+              </div>
+            </div>
+
+            <div class="map-actions-toolbar">
+              <button onclick="window.MastiSenseApp.useMyLocation()" class="btn btn-secondary btn-sm" id="btnUseMyLocation" title="Geolocate with ~2km movement throttle gate">
+                <span>📍</span> <span data-i18n="useLocationBtn">Use My Location</span>
+              </button>
+              <button onclick="window.MastiSenseApp.findNearbyVets()" class="btn btn-primary btn-sm" id="btnFindVets">
+                <span>🏥</span> <span data-i18n="findVetsBtn">Find Nearby Vets</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Controls Bar (Radius Slider + Coordinate Registration) -->
+          <div class="map-controls-panel">
+            <div class="map-control-group">
+              <label for="vetRadiusSlider" class="map-control-lbl">
+                <span data-i18n="vetRadiusLabel">Vet Search Radius:</span> <b id="vetRadiusDisplay">5 km</b>
+              </label>
+              <input type="range" id="vetRadiusSlider" min="2" max="20" value="5" step="1" class="map-slider" oninput="window.MastiSenseApp.updateVetRadius(this.value)">
+            </div>
+
+            <div class="map-control-group" style="flex:1;">
+              <span class="map-control-lbl" data-i18n="activeGpsLabel">Active Center Coordinates:</span>
+              <span id="activeMapCoords" class="map-coords-badge">Not configured (click 'Use My Location')</span>
+            </div>
+
+            <button onclick="window.MastiSenseApp.toggleCoordForm()" class="btn btn-secondary btn-sm" id="btnToggleCoordForm">
+              <span>✏️</span> <span data-i18n="assignCowCoordsBtn">Assign Cow Location</span>
+            </button>
+          </div>
+
+          <!-- Assign Coordinates Collapsible Form -->
+          <div id="cowCoordFormBox" class="coord-form-drawer" style="display:none;">
+            <div class="coord-form-grid">
+              <div class="form-field">
+                <label class="form-lbl" data-i18n="selectCowCoordLabel">Cow:</label>
+                <select id="mapCowSelect" class="form-select"></select>
+              </div>
+              <div class="form-field">
+                <label class="form-lbl">Latitude:</label>
+                <input type="number" id="mapCowLat" step="0.0001" class="form-input" placeholder="e.g. 13.0827">
+              </div>
+              <div class="form-field">
+                <label class="form-lbl">Longitude:</label>
+                <input type="number" id="mapCowLon" step="0.0001" class="form-input" placeholder="e.g. 80.2707">
+              </div>
+              <div class="form-field">
+                <label class="form-lbl">Label:</label>
+                <input type="text" id="mapCowLabel" class="form-input" placeholder="e.g. Barn A / Pasture 2">
+              </div>
+              <div class="form-field" style="display:flex; align-items:flex-end;">
+                <button onclick="window.MastiSenseApp.saveCowLocation()" class="btn btn-accent btn-sm">
+                  <span data-i18n="saveLocationBtn">Save Location</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Map and Vets Split Grid -->
+          <div class="map-viewport-grid">
+            <!-- Left: Leaflet Map Container -->
+            <div class="map-canvas-container">
+              <div id="mapContainer" class="leaflet-map-frame"></div>
+              <div class="map-floating-legend">
+                <div class="legend-item"><span class="legend-dot dot-high"></span> <span data-i18n="legendHigh">High Risk Cow</span></div>
+                <div class="legend-item"><span class="legend-dot dot-mod"></span> <span data-i18n="legendMod">Moderate Risk Cow</span></div>
+                <div class="legend-item"><span class="legend-dot dot-low"></span> <span data-i18n="legendLow">Low Risk / Healthy Cow</span></div>
+                <div class="legend-item"><span class="legend-dot dot-vet"></span> <span data-i18n="legendVet">Veterinary Clinic</span></div>
+              </div>
+            </div>
+
+            <!-- Right: Nearby Vets List -->
+            <div class="map-vets-sidebar">
+              <div class="vets-header">
+                <span class="vets-title">🏥 <span data-i18n="nearbyVetsTitle">Nearby Veterinary Clinics</span></span>
+                <span id="vetsCountBadge" class="vets-count-badge">0 Found</span>
+              </div>
+              <div class="vets-list" id="vetsList">
+                <div class="state-container" style="padding:20px;">
+                  <span class="state-desc" data-i18n="noVetsQueried">Set location and click 'Find Nearby Vets' to query OpenStreetMap Overpass.</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ==================================================================
+             SECTION 6C: ALERTS CENTER & INCIDENT MANAGEMENT (#alerts)
+             ================================================================== -->
+        <section id="alerts" class="panel-card">
+          <div class="panel-card-header">
+            <div class="panel-title-group">
+              <h2 class="panel-title">
+                <span>🚨</span> <span data-i18n="alertsTitle">Active Alerts & Incident Center</span>
+              </h2>
+              <div class="panel-subtitle" data-i18n="alertsSubtitle">
+                Real-time alerts triggered by high risk forecasts or critical sensor anomalies
+              </div>
+            </div>
+
+            <div>
+              <button onclick="window.MastiSenseApp.evaluateAlertsNow()" class="btn btn-secondary btn-sm" id="btnEvalAlerts">
+                <span>🔍</span> <span data-i18n="evalAlertsBtn">Evaluate Alerts</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="alerts-list-container" id="alertsContainer">
+            <div class="state-container">
+              <span class="state-desc" data-i18n="noAlerts">Loading alerts feed...</span>
+            </div>
+          </div>
+        </section>
+
+        <!-- ==================================================================
+             SECTION 7: MODEL GOVERNANCE & DRIFT SURVEILLANCE (#governance)
+             ================================================================== -->
+        <section id="governance" class="panel-card">
+          <div class="panel-card-header">
+            <div class="panel-title-group">
+              <h2 class="panel-title">
+                <span>⚖️</span> <span data-i18n="govTitle">ML Model Governance & Drift Surveillance</span>
+              </h2>
+              <div class="panel-subtitle" data-i18n="govSubtitle">
+                Transparent model validation performance, test cohort metrics, and sensor drift audit
+              </div>
+            </div>
+          </div>
+
+          <!-- 4 Production Validation Performance Metrics Cards -->
+          <div class="gov-metrics-grid">
+            <div class="gov-metric-card">
+              <span class="gov-lbl">Holdout Test ROC-AUC (7d)</span>
+              <span class="gov-val" id="govAucVal">-</span>
+              <span class="gov-sub" id="govAucSub">Evaluating...</span>
+            </div>
+
+            <div class="gov-metric-card">
+              <span class="gov-lbl">Test Sensitivity / Recall (7d)</span>
+              <span class="gov-val" id="govRecallVal">-</span>
+              <span class="gov-sub" id="govRecallSub">Evaluating...</span>
+            </div>
+
+            <div class="gov-metric-card">
+              <span class="gov-lbl">Test Specificity (7d)</span>
+              <span class="gov-val" id="govSpecVal">-</span>
+              <span class="gov-sub" id="govSpecSub">Evaluating...</span>
+            </div>
+
+            <div class="gov-metric-card">
+              <span class="gov-lbl">Brier Calibration Improvement</span>
+              <span class="gov-val" id="govBrierVal">-</span>
+              <span class="gov-sub" id="govBrierSub">Evaluating...</span>
+            </div>
+          </div>
+
+          <!-- Candidate Model Promotion Audit Table -->
+          <div style="margin-top: 14px; font-size: 0.8rem; font-weight: 700; color: var(--text-secondary);" data-i18n="govCandidateAudit">
+            Candidate Model Promotion Audit Log
+          </div>
+
+          <div class="data-table-wrapper">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th data-i18n="auditColVersion">Model Version</th>
+                  <th data-i18n="auditCol7d">7-Day Test Metrics</th>
+                  <th data-i18n="auditCol14d">14-Day Test Metrics</th>
+                  <th data-i18n="auditColStatus">Promotion Status</th>
+                  <th data-i18n="auditColReasons">Quality Gate Decision & Audit Log</th>
+                </tr>
+              </thead>
+              <tbody id="auditTableBody">
+                <tr>
+                  <td colspan="5" class="state-container">Loading governance records...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Sensor PSI Drift Callout -->
+          <div class="drift-summary-callout">
+            <b data-i18n="driftTitle">Sensor Population Stability (PSI Drift Audit):</b>
+            <span id="driftStatusText" data-i18n="driftLoading">Checking drift summary...</span>
+          </div>
+        </section>
+
+      </main>
+
+      <!-- App Footer -->
+      <footer class="app-footer">
+        <div class="footer-inner">
+          <div>
+            <b>MastiSense Precision Agricultural Decision Support</b> • Version 4.1<br>
+            <span style="color: var(--text-muted);">
+              ESP32 Firmware Ready • XGBoost Dual-Horizon Pipeline • Platt Probability Calibration
+            </span>
+          </div>
+          <div style="text-align: right;">
+            <span>Precision Herd Health & Bio-Telemetry Surveillance</span>
+          </div>
+        </div>
+      </footer>
+
+    </div>
+
+  </div>
+
+  <!-- API Base Configuration Modal -->
+  <div class="modal-backdrop" id="apiModalBackdrop">
+    <div class="modal-dialog">
+      <h3 class="modal-title" data-i18n="modalApiTitle">Configure FastAPI Server URL</h3>
+      <p style="font-size: 0.8rem; color: var(--text-muted);" data-i18n="modalApiDesc">
+        Specify the base HTTP address for the MastiSense backend API.
+      </p>
+      <input type="text" id="modalApiInput" class="search-field-input" style="border: 1px solid var(--border-medium); border-radius: var(--radius-sm); padding: 8px 12px;" value="http://127.0.0.1:8000">
+      <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px;">
+        <button onclick="window.MastiSenseApp.closeApiModal()" class="btn btn-secondary btn-sm" data-i18n="modalCancelBtn">
+          Cancel
+        </button>
+        <button onclick="window.MastiSenseApp.saveApiBase()" class="btn btn-primary btn-sm" data-i18n="modalSaveBtn">
+          Save & Connect
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Non-intrusive Toast Container -->
+  <div class="toast-container" id="toastContainer"></div>
+
+  <!-- Service Worker Registration for PWA (§1) -->
+  <script>
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", function () {
+        navigator.serviceWorker.register("./sw.js").then(function (reg) {
+          console.log("[PWA] ServiceWorker registered with scope:", reg.scope);
+        }).catch(function (err) {
+          console.warn("[PWA] ServiceWorker registration failed:", err);
+        });
+      });
+    }
+  </script>
+
+  <!-- Modular Application Logic Script -->
+  <script src="app.js"></script>
+</body>
+</html>

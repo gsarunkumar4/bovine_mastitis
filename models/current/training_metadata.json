@@ -1,0 +1,14 @@
+{
+  "trained_at": "2026-09-13T17:46:57.750465+00:00",
+  "data_file": "data/cleaned.csv",
+  "data_hash": "0d21d8c7a39aec96",
+  "data_type": "synthetic",
+  "feature_pipeline_version": "4.1",
+  "python_version": "3.14.0",
+  "xgboost_version": "3.4.1",
+  "sklearn_version": "1.9.1",
+  "n_estimators_used_7d": 83,
+  "n_estimators_used_14d": 89,
+  "version": "v002",
+  "saved_at": "2026-09-13T17:46:57.808079+00:00"
+}

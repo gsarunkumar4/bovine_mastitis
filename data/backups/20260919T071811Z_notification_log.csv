@@ -1,0 +1,2 @@
+id,alert_id,channel,payload,success,error,created_at
+1,,console,"{""cow_id"": ""TEST"", ""risk_score"": 0.0, ""message"": ""This is a test notification from MastiSense."", ""timestamp"": ""2026-09-19T07:03:55.636295+00:00"", ""model_version"": ""test""}",1,,2026-09-19 07:03:55
